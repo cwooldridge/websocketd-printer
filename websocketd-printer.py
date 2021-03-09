@@ -23,7 +23,7 @@ En caso contrario, consulte <http://www.gnu.org/licenses/gpl.html>.
 """
 
 # valores por defecto para la configuración de la impresora
-PRINTER_TYPE = 'network'
+PRINTER_TYPE = 'system'
 PRINTER_URI = None
 
 # módulos que se usarán
@@ -162,7 +162,6 @@ def on_message(websocket, path, printer_type, printer_uri):
                     with open(pdf_file, 'wb') as f:
                         f.write(datos)
                     print_system(pdf_file, printer_uri)
-                    print("sda")
                     try:
                         #Eliminar archivo y directorio temporal generado
                         sleep(6)
