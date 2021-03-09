@@ -23,13 +23,13 @@ En caso contrario, consulte <http://www.gnu.org/licenses/gpl.html>.
 """
 
 # valores por defecto para la configuración de la impresora
-PRINTER_TYPE = 'system'
+PRINTER_TYPE = 'network'
 PRINTER_URI = None
 
 # módulos que se usarán
 import sys
 import getopt
-import os
+import os, os.path
 import asyncio
 import websockets
 import functools
@@ -37,7 +37,21 @@ import json
 import zipfile
 import io
 import socket
+import subprocess
+if os.name == 'posix':
+    try:
+        import cups
+    except ModuleNotFoundError:
+        pass
+elif os.name == 'nt' :
+    try:
+        import win32print
+        import win32api
+        import pywintypes
+    except ModuleNotFoundError:
+        pass
 from datetime import datetime
+from time import sleep
 
 # función que lanza el websocket de manera asíncrona
 def run(printer_type = PRINTER_TYPE, printer_uri = PRINTER_URI):
@@ -75,6 +89,23 @@ def on_message(websocket, path, printer_type, printer_uri):
     message = yield from websocket.recv()
     # procesar tarea "print" para impresión
     if parts[1] == 'print':
+        # verificar soporte para impresión
+        if os.name == 'posix':
+            try:
+                import cups
+            except ModuleNotFoundError:
+                yield from websocket.send(json.dumps({
+                    'status': 1,
+                    'message': 'Falta instalar módulo de CUPS para Python (pycups)'
+                }))
+        elif os.name == 'nt' :
+            try:
+                import win32print
+            except ModuleNotFoundError:
+                yield from websocket.send(json.dumps({
+                    'status': 1,
+                    'message': 'Falta instalar pywin32'
+                }))
         # obtener formato de impresión
         try:
             formato = parts[2]
@@ -121,7 +152,24 @@ def on_message(websocket, path, printer_type, printer_uri):
             # impresora del sistema
             else:
                 try :
-                    print_system(datos, printer_uri)
+                    cmd_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+                    if not os.path.exists(cmd_dir+'/tmpdte') :
+                        os.makedirs(cmd_dir+'/tmpdte')
+                    # crear archivo temporal con el PDF
+                    dt = datetime.now()
+                    ms = (dt.day * 24 * 60 * 60 + dt.second) * 1000 + dt.microsecond / 1000.0
+                    pdf_file = cmd_dir+'/tmpdte/dte_'+str(ms)+'.pdf'
+                    with open(pdf_file, 'wb') as f:
+                        f.write(datos)
+                    print_system(pdf_file, printer_uri)
+                    print("sda")
+                    try:
+                        #Eliminar archivo y directorio temporal generado
+                        sleep(6)
+                        os.remove(pdf_file)
+                        os.rmdir(cmd_dir+'/tmpdte')
+                    except OSError as e:
+                        raise Exception('Error al eliminar archivo temporal de la impresión.')
                 except (ConnectionRefusedError, OSError) as e:
                     yield from websocket.send(json.dumps({
                         'status': 1,
@@ -156,7 +204,51 @@ def print_network(data, uri):
 
 # función que realiza la impresión en una impresora de red
 def print_system(data, printer = None):
-    pass
+    if printer == None :
+        printer = printer_system_get_default()
+    if printer == None :
+        raise Exception('No fue posible obtener una impresora por defecto')
+    if os.name == 'posix':
+        return print_system_linux(data, printer)
+    elif os.name == 'nt' :
+        return print_system_windows(data, printer)
+    else :
+        raise Exception('Sistema operativo no soportado')
+
+# entrega la impresora por defecto del sistema
+def printer_system_get_default() :
+    if os.name == 'posix':
+        conn = cups.Connection()
+        defaultPrinter = conn.getDefault()
+        if defaultPrinter is None :
+            printers = conn.getPrinters()
+            for printer in printers :
+                defaultPrinter = printer
+                break
+    elif os.name == 'nt' :
+        defaultPrinter = win32print.GetDefaultPrinter() # función que entrega un string con el nombre de la impresora
+    else :
+        defaultPrinter = None
+    return defaultPrinter
+
+# imprimir en linux
+def print_system_linux(pdf, impresora) :
+    conn = cups.Connection()
+    conn.printFile(impresora, pdf, 'DTE', {})
+    return 0
+
+# imprimir en windows
+def print_system_windows(pdf, impresora, delay = 5) :
+    ImpresoraPorDefecto = str(win32print.GetDefaultPrinter()) # primero guardamos la impresora por defecto
+    win32print.SetDefaultPrinter(impresora) # luego se cambia la impresora por defecto por la impresora específica
+    try:
+        win32api.ShellExecute(0, 'print', pdf, None, '.', 0)
+    except pywintypes.error as e:
+        print(e.strerror)
+        return 1
+    sleep(delay) # se espera un tiempo para que se envíe el archivo a la impresora
+    win32print.SetDefaultPrinter(ImpresoraPorDefecto) # vuelve a estar la impresora por defecto original
+    return 0
 
 # función para log en el servidor de websockets
 def log(msg) :
