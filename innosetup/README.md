@@ -42,8 +42,8 @@ The **websocketd-innosetup.iss** file allows modifying the creation of the pytho
 	#define MyAppDirectory "C:\Users\%USER%\Desktop\websocketd-printer"
 ```
 ```
-    Opción 1
+	Option 1
 	#define MyAppDirectory "C:\Users\EXAMPLE\Desktop\websocketd-printer"
-	Opción 2
+	Option 2
 	#define MyAppDirectory "C:\websocketd-printer"
 ```
