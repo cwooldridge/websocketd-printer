@@ -1,3 +1,4 @@
+Inno Setup
 ==========
 
 This repository allows you to create a python executable to connect a printer to a web application.
