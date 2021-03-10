@@ -20,9 +20,9 @@ The file structure is defined as :
 
                  innosetup/
                          WPy32-3771/ #WinPython Folder
-                         copying
+                         COPYING
                          favicon.ico
-                         readme.txt
+                         README.txt
                          requirements.txt
                          websocketd-printer.py
 
