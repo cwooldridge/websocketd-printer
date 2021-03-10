@@ -1,4 +1,4 @@
-WebSocket Printer
+WebSocketd Printer
 =================
 
 WebSocket Daemon to Connect a Printer to A Web Application.
