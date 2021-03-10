@@ -2,7 +2,8 @@ Inno Setup
 ==========
 
 This repository allows you to create a python executable to connect a printer to a web application.
-Para esto se utiliza WinPython e Inno Setup.
+WinPython and Inno Setup are used for this.
+
 * **WinPython**, is a free scientific Python distribution for Windows that is portable.
 * **Inno Setup**, is a free software for creating Windows installers.
 
