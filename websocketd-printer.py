@@ -75,18 +75,16 @@ def run(printer_type = PRINTER_TYPE, printer_uri = PRINTER_URI):
     return 0
 
 # función que se ejecuta cuando el websocket recibe un mensaje
-@asyncio.coroutine
-def on_message(websocket, path, printer_type, printer_uri):
+async def on_message(websocket, path, printer_type, printer_uri):
     # verificar las partes pasadas al script
     # al menos se debe pasar una acción que es la que se está realizando
     parts = path.split('/')
     if len(parts) < 2 or parts[1] == '':
-        yield from websocket.send(json.dumps({
+        await websocket.send(json.dumps({
             'status': 1,
             'message': 'Falta indicar la acción que se está solicitando realizar'
         }))
-        return 1
-    message = yield from websocket.recv()
+    message = await websocket.recv()
     # procesar tarea "print" para impresión
     if parts[1] == 'print':
         # verificar soporte para impresión
@@ -94,7 +92,7 @@ def on_message(websocket, path, printer_type, printer_uri):
             try:
                 import cups
             except ModuleNotFoundError:
-                yield from websocket.send(json.dumps({
+                await websocket.send(json.dumps({
                     'status': 1,
                     'message': 'Falta instalar módulo de CUPS para Python (pycups)'
                 }))
@@ -102,7 +100,7 @@ def on_message(websocket, path, printer_type, printer_uri):
             try:
                 import win32print
             except ModuleNotFoundError:
-                yield from websocket.send(json.dumps({
+                await websocket.send(json.dumps({
                     'status': 1,
                     'message': 'Falta instalar pywin32'
                 }))
@@ -116,11 +114,10 @@ def on_message(websocket, path, printer_type, printer_uri):
             z = zipfile.ZipFile(io.BytesIO(message))
             datos = z.read(z.infolist()[0])
         except zipfile.BadZipFile as e:
-            yield from websocket.send(json.dumps({
+            await websocket.send(json.dumps({
                 'status': 1,
                 'message': 'No fue posible obtener el archivo para imprimir (' + str(e) + ')'
             }))
-            return 1
         # opciones para impresión con ESCPOS
         if formato == 'escpos':
             # impresora en red
@@ -128,27 +125,24 @@ def on_message(websocket, path, printer_type, printer_uri):
                 try :
                     print_network(datos, printer_uri)
                 except (ConnectionRefusedError, OSError) as e:
-                    yield from websocket.send(json.dumps({
+                    await websocket.send(json.dumps({
                         'status': 1,
                         'message': 'No fue posible imprimir en ' + printer_uri + ' (' + str(e) + ')'
                     }))
-                    return 1
             # impresora del sistema
             else:
-                yield from websocket.send(json.dumps({
+                await websocket.send(json.dumps({
                     'status': 1,
                     'message': 'Tipo de impresora ' + printer_type + ' no soportada con formato ' + formato
                 }))
-                return 1
         # opciones para impresión usando el PDF
         elif formato == 'pdf':
             # impresora en red
             if printer_type == 'network':
-                yield from websocket.send(json.dumps({
+                await websocket.send(json.dumps({
                     'status': 1,
                     'message': 'Tipo de impresora ' + printer_type + ' no soportada con formato ' + formato
                 }))
-                return 1
             # impresora del sistema
             else:
                 try :
@@ -169,22 +163,19 @@ def on_message(websocket, path, printer_type, printer_uri):
                 except (ConnectionRefusedError, OSError, Exception) as e:
                     if printer_uri is None:
                         printer_uri = 'default'
-                    yield from websocket.send(json.dumps({
+                    await websocket.send(json.dumps({
                         'status': 1,
                         'message': 'No fue posible imprimir en ' + printer_uri + ' (' + str(e) + ')'
                     }))
-                    return 1
         # formato no soportado (ni ESCPOS, ni PDF)
         else:
-            yield from websocket.send(json.dumps({
+            await websocket.send(json.dumps({
                 'status': 1,
                 'message': 'Formato ' + formato + ' no soportado'
             }))
-            return 1
         # log impresión
         log('Se imprimió usando \'' + formato + '\' en la impresora \'' + printer_type + '\'')
     # todo ok
-    return 0
 
 # función que realiza la impresión en una impresora de red
 def print_network(data, uri):
