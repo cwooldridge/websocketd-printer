@@ -169,7 +169,9 @@ def on_message(websocket, path, printer_type, printer_uri):
                         os.rmdir(cmd_dir+'/tmpdte')
                     except OSError as e:
                         raise Exception('Error al eliminar archivo temporal de la impresión.')
-                except (ConnectionRefusedError, OSError) as e:
+                except (ConnectionRefusedError, OSError, Exception) as e:
+                    if printer_uri is None:
+                        printer_uri = 'default'
                     yield from websocket.send(json.dumps({
                         'status': 1,
                         'message': 'No fue posible imprimir en ' + printer_uri + ' (' + str(e) + ')'
