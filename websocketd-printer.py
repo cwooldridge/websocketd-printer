@@ -152,13 +152,11 @@ def on_message(websocket, path, printer_type, printer_uri):
             # impresora del sistema
             else:
                 try :
-                    cmd_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-                    if not os.path.exists(cmd_dir+'/tmpdte') :
-                        os.makedirs(cmd_dir+'/tmpdte')
+                    cmd_dir = os.path.dirname(os.path.realpath(__file__))
                     # crear archivo temporal con el PDF
                     dt = datetime.now()
                     ms = (dt.day * 24 * 60 * 60 + dt.second) * 1000 + dt.microsecond / 1000.0
-                    pdf_file = cmd_dir+'/tmpdte/dte_'+str(ms)+'.pdf'
+                    pdf_file = cmd_dir + '/documento_' + str(ms) + '.pdf'
                     with open(pdf_file, 'wb') as f:
                         f.write(datos)
                     print_system(pdf_file, printer_uri)
@@ -166,7 +164,6 @@ def on_message(websocket, path, printer_type, printer_uri):
                         #Eliminar archivo y directorio temporal generado
                         sleep(6)
                         os.remove(pdf_file)
-                        os.rmdir(cmd_dir+'/tmpdte')
                     except OSError as e:
                         raise Exception('Error al eliminar archivo temporal de la impresión.')
                 except (ConnectionRefusedError, OSError, Exception) as e:
