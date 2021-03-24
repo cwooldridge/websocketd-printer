@@ -1,3 +1,4 @@
 websockets
 pycups; sys_platform == 'linux'
 pywin32; sys_platform == 'windows'
+PyPDF2

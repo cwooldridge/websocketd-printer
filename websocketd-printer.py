@@ -25,6 +25,7 @@ En caso contrario, consulte <http://www.gnu.org/licenses/gpl.html>.
 # valores por defecto para la configuración de la impresora
 PRINTER_TYPE = 'system'
 PRINTER_URI = None
+PRINTER_MARGIN = 0 # rango de 0 a 8
 
 # módulos que se usarán
 import sys
@@ -48,14 +49,16 @@ elif os.name == 'nt' :
         import win32print
         import win32api
         import pywintypes
+        from PyPDF2 import PdfFileReader, PdfFileWriter
     except ModuleNotFoundError:
         pass
 from datetime import datetime
 from time import sleep
 
+
 # función que lanza el websocket de manera asíncrona
-def run(printer_type = PRINTER_TYPE, printer_uri = PRINTER_URI):
-    print('Iniciando WebSocketd Printer con printer_type=' + str(printer_type) + ' y printer_uri=' + str(printer_uri))
+def run(printer_type = PRINTER_TYPE, printer_uri = PRINTER_URI, printer_margin = PRINTER_MARGIN):
+    print('Iniciando WebSocketd Printer con printer_type=' + str(printer_type) + ', printer_uri=' + str(printer_uri) + ' y printer_margin='+ str(printer_margin))
     # ejecutar demoniop
     try :
         server = websockets.serve(
@@ -63,6 +66,7 @@ def run(printer_type = PRINTER_TYPE, printer_uri = PRINTER_URI):
                 on_message,
                 printer_type = printer_type,
                 printer_uri = printer_uri,
+                printer_margin = printer_margin,
             ),
             'localhost',
             2186
@@ -75,7 +79,7 @@ def run(printer_type = PRINTER_TYPE, printer_uri = PRINTER_URI):
     return 0
 
 # función que se ejecuta cuando el websocket recibe un mensaje
-async def on_message(websocket, path, printer_type, printer_uri):
+async def on_message(websocket, path, printer_type, printer_uri, printer_margin):    
     # verificar las partes pasadas al script
     # al menos se debe pasar una acción que es la que se está realizando
     parts = path.split('/')
@@ -145,17 +149,11 @@ async def on_message(websocket, path, printer_type, printer_uri):
                 }))
             # impresora del sistema
             else:
-                try :
-                    cmd_dir = os.path.dirname(os.path.realpath(__file__))
-                    # crear archivo temporal con el PDF
-                    dt = datetime.now()
-                    ms = (dt.day * 24 * 60 * 60 + dt.second) * 1000 + dt.microsecond / 1000.0
-                    pdf_file = cmd_dir + '/documento_' + str(ms) + '.pdf'
-                    with open(pdf_file, 'wb') as f:
-                        f.write(datos)
+                try :                    
+                    pdf_file = establecer_margen(datos,printer_margin)
                     print_system(pdf_file, printer_uri)
                     try:
-                        #Eliminar archivo y directorio temporal generado
+                        #Eliminar archivo temporal generado
                         sleep(6)
                         os.remove(pdf_file)
                     except OSError as e:
@@ -176,7 +174,42 @@ async def on_message(websocket, path, printer_type, printer_uri):
         # log impresión
         log('Se imprimió usando \'' + formato + '\' en la impresora \'' + printer_type + '\'')
     # todo ok
+def establecer_margen(datos,margin):
+    cmd_dir = os.path.dirname(os.path.realpath(__file__))
+    # crear PDF con la información binaria
+    dt = datetime.now()
+    ms = (dt.day * 24 * 60 * 60 + dt.second) * 1000 + dt.microsecond / 1000.0
+    pdf_file = cmd_dir + '/documento_' + str(ms) + '.pdf'
+    with open(pdf_file, 'wb') as m:
+        m.write(datos)       
+    if margin > 0:                
+        # leer pdf creado con la informacion binaria
+        with open(pdf_file, 'rb') as f:
+            p = PdfFileReader(f)
+            info = p.getDocumentInfo()
+            number_of_pages = p.getNumPages()
 
+            writer = PdfFileWriter()                
+            # recorrer el pdf creado para establecer el margen
+            for i in range(number_of_pages):                            
+                page = p.getPage(i)                        
+                new_page = writer.addBlankPage(
+                    page.mediaBox.getWidth(),
+                    page.mediaBox.getHeight()
+                )            
+                new_page.mergeScaledTranslatedPage(page, 1, 8, 0)                            
+            new_pdf = cmd_dir + '/documento_margin' + str(ms) + '.pdf'
+            # crear el nuevo pdf con el margen 
+            with open(new_pdf, 'wb') as n:
+                writer.write(n)                
+        try:
+            #Eliminar archivo temporal generado
+            sleep(6)
+            os.remove(pdf_file)
+        except OSError as e:
+            raise Exception('Error al eliminar archivo temporal de la impresión.')               
+        return new_pdf
+    return pdf_file
 # función que realiza la impresión en una impresora de red
 def print_network(data, uri):
     if uri.find(':') > 0 :
@@ -196,7 +229,7 @@ def print_system(data, printer = None):
     if printer == None :
         printer = printer_system_get_default()
     if printer == None :
-        raise Exception('No fue posible obtener una impresora por defecto')
+        raise Exception('No fue posible obtener una impresora por defecto')     
     if os.name == 'posix':
         return print_system_linux(data, printer)
     elif os.name == 'nt' :
@@ -214,9 +247,9 @@ def printer_system_get_default() :
             for printer in printers :
                 defaultPrinter = printer
                 break
-    elif os.name == 'nt' :
+    elif os.name == 'nt' :        
         defaultPrinter = win32print.GetDefaultPrinter() # función que entrega un string con el nombre de la impresora
-    else :
+    else :        
         defaultPrinter = None
     return defaultPrinter
 
@@ -231,7 +264,7 @@ def print_system_windows(pdf, impresora, delay = 5) :
     ImpresoraPorDefecto = str(win32print.GetDefaultPrinter()) # primero guardamos la impresora por defecto
     win32print.SetDefaultPrinter(impresora) # luego se cambia la impresora por defecto por la impresora específica
     try:
-        win32api.ShellExecute(0, 'print', pdf, None, '.', 0)
+        win32api.ShellExecute(0, 'print', pdf, None, '.', 0)        
     except pywintypes.error as e:
         print(e.strerror)
         return 1
@@ -251,10 +284,11 @@ def usage(message = None):
         print('[error] ' + message, end="\n\n")
     print('Modo de uso:')
     print('  $ '+os.path.basename(sys.argv[0])+' [--printer_type=TYPE] [--printer_uri=URI]', end="\n\n")
-    print('  TYPE :  - usar "system" para una impresora instalada en el equipo. Usado con formato PDF.')
-    print('          - usar "network" para una impresora en red. Usado con formato ESCPOS.')
-    print('  URI  :  - si TYPE es "system" se puede indicar el nombre de la impresora a usar')
-    print('          - si TYPE es "network" es la dirección de la impresora en red. Ejemplo: 172.16.1.5:9100', end="\n\n")
+    print('  TYPE    :  - usar "system" para una impresora instalada en el equipo. Usado con formato PDF.')
+    print('             - usar "network" para una impresora en red. Usado con formato ESCPOS.')
+    print('  URI     :  - si TYPE es "system" se puede indicar el nombre de la impresora a usar')
+    print('             - si TYPE es "network" es la dirección de la impresora en red. Ejemplo: 172.16.1.5:9100')
+    print('  MARGIN  :  - si MARGIN es enviado, se agregará un margen al lado izquierdo de la boleta', end="\n\n")    
     if message is None:
         return 0
     else:
@@ -265,9 +299,10 @@ def main():
     # configuración inicialmente desde variables de entorno
     printer_type = os.getenv('WEBSOCKETD_PRINTER_TYPE', PRINTER_TYPE)
     printer_uri = os.getenv('WEBSOCKETD_PRINTER_URI', PRINTER_URI)
+    printer_margin = os.getenv('WEBSOCKETD_PRINTER_MAGIN', PRINTER_MARGIN)
     # configuración desde parámetros pasados al programa
     options = 'h'
-    long_options = ['printer_type=', 'printer_uri=']
+    long_options = ['printer_type=', 'printer_uri=', 'printer_margin']
     try:
         opts, args = getopt.getopt(sys.argv[1:], options, long_options)
     except getopt.GetoptError:
@@ -277,10 +312,12 @@ def main():
             printer_type = val
         elif var == '--printer_uri':
             printer_uri = val
+        elif var == '--printer_margin':
+            printer_margin = 8
         elif var == '-h':
             return usage()
     # ejecutar websocket con las opciones indicadas
-    return run(printer_type, printer_uri)
+    return run(printer_type, printer_uri, printer_margin)
 
 # ejecutar el programa principal si se llama directamente a este archivo
 if __name__ == '__main__':
