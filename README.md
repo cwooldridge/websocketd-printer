@@ -13,3 +13,5 @@ In Debian GNU/Linux or Neon KDE you need to execute first:
 Similar in others distributions of GNU/Linux.
 
 License of the project: GPL
+
+![Impresión directa con ESCPOS](https://i.imgur.com/gnMGogW.gif "Ejemplo con impresora Epson TM-T20II")
