@@ -26,7 +26,12 @@ En caso contrario, consulte <http://www.gnu.org/licenses/gpl.html>.
 PRINTER_TYPE = 'system'
 PRINTER_URI = None
 PRINTER_MARGIN = 0 # rango de 0 a 8
-
+PRINTERS_SUPPORTED = {
+    'tm-t20iii': {
+        'idVendor': 0x04b8,
+        'idProduct': 0x0e28,
+    }
+}
 # módulos que se usarán
 import sys
 import getopt
@@ -39,6 +44,8 @@ import zipfile
 import io
 import socket
 import subprocess
+from escpos.connections import getUSBPrinter
+
 if os.name == 'posix':
     try:
         import cups
@@ -79,7 +86,7 @@ def run(printer_type = PRINTER_TYPE, printer_uri = PRINTER_URI, printer_margin =
     return 0
 
 # función que se ejecuta cuando el websocket recibe un mensaje
-async def on_message(websocket, path, printer_type, printer_uri, printer_margin):    
+async def on_message(websocket, path, printer_type, printer_uri, printer_margin):
     # verificar las partes pasadas al script
     # al menos se debe pasar una acción que es la que se está realizando
     parts = path.split('/')
@@ -131,39 +138,36 @@ async def on_message(websocket, path, printer_type, printer_uri, printer_margin)
                 except (ConnectionRefusedError, OSError) as e:
                     await websocket.send(json.dumps({
                         'status': 1,
-                        'message': 'No fue posible imprimir en ' + printer_uri + ' (' + str(e) + ')'
+                        'message': 'No fue posible imprimir en ' + str(printer_uri) + ' (' + str(e) + ')'
                     }))
             # impresora del sistema
             else:
-                await websocket.send(json.dumps({
-                    'status': 1,
-                    'message': 'Tipo de impresora ' + printer_type + ' no soportada con formato ' + formato
-                }))
+                try :
+                    print_system_escpos(datos, printer_uri)
+                except (ConnectionRefusedError, OSError, Exception) as e:
+                    await websocket.send(json.dumps({
+                        'status': 1,
+                        'message': 'No fue posible imprimir en ' + str(printer_uri) + ' (' + str(e) + ')' # TODO revisar mensaje con None
+                    }))
         # opciones para impresión usando el PDF
         elif formato == 'pdf':
             # impresora en red
             if printer_type == 'network':
                 await websocket.send(json.dumps({
                     'status': 1,
-                    'message': 'Tipo de impresora ' + printer_type + ' no soportada con formato ' + formato
+                    'message': 'Tipo de impresora ' + str(printer_type) + ' no soportada con formato ' + formato
                 }))
             # impresora del sistema
             else:
-                try :                    
+                try :
                     pdf_file = establecer_margen(datos,printer_margin)
                     print_system(pdf_file, printer_uri)
-                    try:
-                        #Eliminar archivo temporal generado
-                        sleep(6)
-                        os.remove(pdf_file)
-                    except OSError as e:
-                        raise Exception('Error al eliminar archivo temporal de la impresión.')
                 except (ConnectionRefusedError, OSError, Exception) as e:
                     if printer_uri is None:
                         printer_uri = 'default'
                     await websocket.send(json.dumps({
                         'status': 1,
-                        'message': 'No fue posible imprimir en ' + printer_uri + ' (' + str(e) + ')'
+                        'message': 'No fue posible imprimir en ' + str(printer_uri) + ' (' + str(e) + ')'
                     }))
         # formato no soportado (ni ESCPOS, ni PDF)
         else:
@@ -172,44 +176,44 @@ async def on_message(websocket, path, printer_type, printer_uri, printer_margin)
                 'message': 'Formato ' + formato + ' no soportado'
             }))
         # log impresión
-        log('Se imprimió usando \'' + formato + '\' en la impresora \'' + printer_type + '\'')
+        log('Se imprimió usando \'' + formato + '\' en la impresora \'' + str(printer_type) + '\'')
     # todo ok
+
 def establecer_margen(datos,margin):
     cmd_dir = os.path.dirname(os.path.realpath(__file__))
     # crear PDF con la información binaria
-    dt = datetime.now()
-    ms = (dt.day * 24 * 60 * 60 + dt.second) * 1000 + dt.microsecond / 1000.0
-    pdf_file = cmd_dir + '/documento_' + str(ms) + '.pdf'
+    pdf_file = cmd_dir + '/documento.pdf'
     with open(pdf_file, 'wb') as m:
-        m.write(datos)       
-    if margin > 0:                
+        m.write(datos)
+    if margin > 0:
         # leer pdf creado con la informacion binaria
         with open(pdf_file, 'rb') as f:
             p = PdfFileReader(f)
             info = p.getDocumentInfo()
             number_of_pages = p.getNumPages()
 
-            writer = PdfFileWriter()                
+            writer = PdfFileWriter()
             # recorrer el pdf creado para establecer el margen
-            for i in range(number_of_pages):                            
-                page = p.getPage(i)                        
+            for i in range(number_of_pages):
+                page = p.getPage(i)
                 new_page = writer.addBlankPage(
                     page.mediaBox.getWidth(),
                     page.mediaBox.getHeight()
-                )            
-                new_page.mergeScaledTranslatedPage(page, 1, 8, 0)                            
-            new_pdf = cmd_dir + '/documento_margin' + str(ms) + '.pdf'
-            # crear el nuevo pdf con el margen 
+                )
+                new_page.mergeScaledTranslatedPage(page, 1, 8, 0)
+            new_pdf = cmd_dir + '/documento_margin.pdf'
+            # crear el nuevo pdf con el margen
             with open(new_pdf, 'wb') as n:
-                writer.write(n)                
+                writer.write(n)
         try:
             #Eliminar archivo temporal generado
             sleep(6)
             os.remove(pdf_file)
         except OSError as e:
-            raise Exception('Error al eliminar archivo temporal de la impresión.')               
+            raise Exception('Error al eliminar archivo temporal de la impresión.')
         return new_pdf
     return pdf_file
+
 # función que realiza la impresión en una impresora de red
 def print_network(data, uri):
     if uri.find(':') > 0 :
@@ -229,13 +233,52 @@ def print_system(data, printer = None):
     if printer == None :
         printer = printer_system_get_default()
     if printer == None :
-        raise Exception('No fue posible obtener una impresora por defecto')     
+        raise Exception('No fue posible obtener una impresora por defecto.')
     if os.name == 'posix':
         return print_system_linux(data, printer)
     elif os.name == 'nt' :
         return print_system_windows(data, printer)
     else :
-        raise Exception('Sistema operativo no soportado')
+        raise Exception('Sistema operativo no soportado.')
+
+# función para imprimir en una impresora tipo system con formato ESCPOS
+def print_system_escpos(data, printer_uri= None):
+    # verificar que printer uri no sea NONE
+    if printer_uri is not None:
+        # verificar si es nombre o product/vendor id
+        if printer_uri.find(":") == -1:
+            # si es nombre
+            # realizar un lower a la string
+            printer_name = printer_uri.lower()
+            # buscar en el diccionario
+            printer = None
+            # si existe asignar a variable
+            if printer_name in PRINTERS_SUPPORTED:
+                printer = PRINTERS_SUPPORTED[printer_name]
+            # sino existe, mostrar mensaje de impresora no soportada
+            else:
+                raise Exception('Impresora ' + str(printer_uri) + ' no soportada')
+        else:
+            try:
+                # si es product/vendor id
+                idVendor, idProduct = printer_uri.split(":")
+                # asignar a variable
+                printer = {
+                    'idVendor': int(idVendor, 16),
+                    'idProduct': int(idProduct, 16),
+                }
+            except (Exception) as e:
+                raise Exception('Formato ingresado no es válido, debe seguir la siguiente estructura idVendor:idProducto')
+        printer = getUSBPrinter()(
+                idVendor = printer['idVendor'],
+                idProduct = printer['idProduct'],
+                inputEndPoint = 0x82,
+                outputEndPoint = 0x01
+            )
+        printer.text(data)
+        printer.lf()
+        return 0
+    raise Exception('Debe espeficar el modelo de la impresora o la id del productor y vendor (vendorId:productId) ') #TODO actualizar mensaje
 
 # entrega la impresora por defecto del sistema
 def printer_system_get_default() :
@@ -247,9 +290,9 @@ def printer_system_get_default() :
             for printer in printers :
                 defaultPrinter = printer
                 break
-    elif os.name == 'nt' :        
+    elif os.name == 'nt' :
         defaultPrinter = win32print.GetDefaultPrinter() # función que entrega un string con el nombre de la impresora
-    else :        
+    else :
         defaultPrinter = None
     return defaultPrinter
 
@@ -264,7 +307,7 @@ def print_system_windows(pdf, impresora, delay = 5) :
     ImpresoraPorDefecto = str(win32print.GetDefaultPrinter()) # primero guardamos la impresora por defecto
     win32print.SetDefaultPrinter(impresora) # luego se cambia la impresora por defecto por la impresora específica
     try:
-        win32api.ShellExecute(0, 'print', pdf, None, '.', 0)        
+        win32api.ShellExecute(0, 'print', pdf, None, '.', 0)
     except pywintypes.error as e:
         print(e.strerror)
         return 1
@@ -288,7 +331,7 @@ def usage(message = None):
     print('             - usar "network" para una impresora en red. Usado con formato ESCPOS.')
     print('  URI     :  - si TYPE es "system" se puede indicar el nombre de la impresora a usar')
     print('             - si TYPE es "network" es la dirección de la impresora en red. Ejemplo: 172.16.1.5:9100')
-    print('  MARGIN  :  - si MARGIN es enviado, se agregará un margen al lado izquierdo de la boleta', end="\n\n")    
+    print('  MARGIN  :  - si MARGIN es enviado, se agregará un margen al lado izquierdo de la boleta', end="\n\n")
     if message is None:
         return 0
     else:
@@ -311,6 +354,8 @@ def main():
         if var == '--printer_type':
             printer_type = val
         elif var == '--printer_uri':
+            if val == 'None':
+                val = None
             printer_uri = val
         elif var == '--printer_margin':
             printer_margin = 8

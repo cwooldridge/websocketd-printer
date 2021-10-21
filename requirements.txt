@@ -1,4 +1,6 @@
 websockets
-pycups; sys_platform == 'linux'
+pycups; sys_platform == 'linux' or sys_platform == 'darwin'
 pywin32; sys_platform == 'windows'
 PyPDF2
+python-printer-escpos
+Pillow
