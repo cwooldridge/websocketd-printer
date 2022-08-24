@@ -9,7 +9,7 @@ How install WebSocket Daemon for Windows:
 * https://soporte.sasco.cl/kb/faq.php?id=221
 
 Download WebSocket Daemon for Windows:
-* https://archivos.libredte.cl/software/websocketd-printer-windows.exe
+* https://cdn.sasco.cl/proyectos/libredte/software/websocketd-printer-windows.exe
 
 ### macOS
 
@@ -17,7 +17,7 @@ How install WebSocket Daemon for macOS:
 * https://soporte.sasco.cl/kb/faq.php?id=203
 
 Download WebSocket Daemon for macOS:
-* https://archivos.libredte.cl/software/websocketd-printer-mac.zip
+* https://cdn.sasco.cl/proyectos/libredte/software/websocketd-printer-mac.zip
 
 
 In Debian GNU/Linux or Neon KDE you need to execute first:
